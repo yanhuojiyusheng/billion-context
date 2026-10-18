@@ -913,6 +913,7 @@ export function applyRanges(parsed: ReturnType<typeof parseCompressInput>, ctx: 
                 : /already compressed/.test(errs) ? "gate:already-compressed"
                 : /requested range\(s\) resolved/.test(errs) ? "gate:none-resolved"
                 : /too small/.test(errs) ? "gate:too-small"
+                : /Batch rejected before folding any range/.test(errs) ? "gate:summary-length"
                 : "gate:other";
             const revNote = revs.length > 0
                 ? ` Note: startId > endId in range(s) ${revs.map((rg) => `${rg.startRef}→${rg.endRef}`).join(", ")} — your refs were reversed; they were normalized to ascending order before evaluation, so check your ref order.`
