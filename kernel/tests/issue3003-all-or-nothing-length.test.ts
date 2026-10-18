@@ -194,3 +194,60 @@ test("a non-candidate range with an oversized summary does NOT reject a valid fr
   // The unknown ref is still reported per-range (content-class, unchanged).
   assert.match(result.result.errors.join("\n"), /m00099/);
 });
+
+test("a too-long refold summary rejects the WHOLE batch incl. a fresh sibling (#3003 refold direction)", () => {
+  const core = createCore();
+  const state = createInitialState();
+  const messages = [
+    msg("a", "alpha"),
+    msg("b", "beta"),
+    msg("c", "gamma"),
+    msg("d", "delta"),
+  ];
+  state.messageRefs = assignRefs(messages, {
+    existing: state.messageRefs,
+    nextIndex: 1,
+  }).map;
+
+  // First fold m00001..m00002 into a block.
+  const first = core.applyCompression({
+    ranges: [
+      { startRef: "m00001", endRef: "m00002", summary: "first fold", topic: "t" },
+    ],
+    messages,
+    state,
+    config: config(),
+  });
+  assert.equal(first.result.blocksCreated, 1);
+  const blockId = first.state.blocks[0]!.blockId;
+
+  // Restore it inline so re-requesting its span classifies as a refold candidate.
+  first.state.blocks.find((b) => b.blockId === blockId)!.restoredInline = true;
+
+  // Second call: refold with an OVERSIZED new summary + a fresh valid sibling.
+  // Without the pre-check the fresh sibling would land first (seam #1) and the
+  // refold retry would pay seam #2; the gate must reject before either commits.
+  const second = core.applyCompression({
+    ranges: [
+      { startRef: "m00001", endRef: "m00002", summary: "z".repeat(400) },
+      { startRef: "m00003", endRef: "m00004", summary: "fresh ok", topic: "sib" },
+    ],
+    messages,
+    state: first.state,
+    config: config({
+      compress: { minCompressRange: 0, maxSummaryLength: 20, minSummaryLength: 0 },
+    }),
+  });
+
+  assert.equal(second.result.blocksCreated, 0, "nothing may commit");
+  assert.equal(second.state.blocks.length, 1, "only the pre-existing block remains");
+  assert.match(second.result.errors[0]!, /Batch rejected before folding any range/);
+  assert.match(
+    second.result.errors[0]!,
+    /range m00001\.\.m00002: Summary too long \(400 chars, max 20\)/,
+  );
+  // Refold atomicity: the restored block keeps its old summary (no partial
+  // in-place update may precede the batch rejection).
+  const b1 = second.state.blocks.find((b) => b.blockId === blockId)!;
+  assert.equal(b1.summary, "first fold");
+});
