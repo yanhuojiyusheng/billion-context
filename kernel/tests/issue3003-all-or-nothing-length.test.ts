@@ -111,7 +111,7 @@ test("a too-short summary in a multi-range batch rejects the WHOLE batch (#3003)
 
   const result = core.applyCompression({
     ranges: [
-      { startRef: "m00001", endRef: "m00002", summary: "ok", topic: "fine" },
+      { startRef: "m00001", endRef: "m00002", summary: "y".repeat(60), topic: "fine" },
       { startRef: "m00003", endRef: "m00004", summary: "x".repeat(5), topic: "too short" },
     ],
     messages,
